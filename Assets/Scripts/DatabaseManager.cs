@@ -12,26 +12,65 @@ public class DatabaseManager : MonoBehaviour
     private const string apiKey = "AIzaSyCSmrFI-QDhwv-rI8lsJiKReoIZlFDAksE";
     private const string authUri = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=";
     private string token;
-    List<HighScore> scores = new List<HighScore>();
+
+    // Muista luoda Unityn hierarchiaan GameObjecti, jossa tämä scripti on
+    
+    public static DatabaseManager Instance;
+
+    private void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+    }
 
     private void Start()
     {
         StartCoroutine(Authenticate());
-        HighScore score = new HighScore { name = "Santeri", score = 1000, date = "20.1.2021" };
-        StartCoroutine(PostData(score));
-        StartCoroutine(GetAllData(scores, ListaHaettu));
     }
 
-    private void ListaHaettu()
+    // Funktio, jolla voi tuhota tietokannasta kokonaisen taulun.
+    public void DeleteTable<T>() => StartCoroutine(_DeleteTable<T>());
+    // Funktio, jolla haetaan tietokannasta kaikki tauluun liittyvä tieto.
+    public void GetAllData<T>(List<T> dataList, Action onDataReceived = null)
     {
-        Debug.Log(scores.Count);
-        foreach (HighScore score in scores)
+        StartCoroutine(_GetAllData(dataList, onDataReceived));
+    }
+
+    // Funktio, jota voi kutsua muista scripteistä lisäämään dataa tietokantaan.
+    public void PostData<T>(T data, Action onDataPosted = null)
+    {
+        StartCoroutine(_PostData(data, onDataPosted));
+    }
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="dataList">Lista, johon data kootaan</param>
+    /// <param name="entries">Voit rajoittaa haettujen rivien määrää</param>
+    /// <param name="onDataReceived">Funktio, joka suoritetaan kun data on onnistuneesti haettu.</param>
+    /// <returns></returns>
+    /// 
+
+    private IEnumerator _DeleteTable<T>()
+    {
+        while (string.IsNullOrEmpty(token))
+            yield return null;
+        string uri = dbUri + typeof(T).ToString() + "/.json?auth=" + token;
+        UnityWebRequest req = UnityWebRequest.Delete(uri);
+        req.SetRequestHeader("Content-Type", "application/json");
+        yield return req.SendWebRequest();
+        if (req.isNetworkError || req.isHttpError)
         {
-            Debug.Log($"{score.name}, {score.score}, {score.date}");
+            Debug.Log(req.error);
+        }
+        else
+        {
+            Debug.Log($"Taulu nimeltä {typeof(T)} tuhottu.");
         }
     }
-
-    private IEnumerator GetAllData<T>(List<T> dataList, Action onDataReceived = null)
+    private IEnumerator _GetAllData<T>(List<T> dataList, Action onDataReceived = null)
     {
         while (string.IsNullOrEmpty(token))
             yield return null;
@@ -51,25 +90,30 @@ public class DatabaseManager : MonoBehaviour
             // Googlen Firebase antaa automaattisesti jokaiselle sinne lähetetylle tiedolle
             // uniikin avaimen. Haetaan tietoa avainten mukaan ja käännetään ne C# -luokaksi
             Dictionary<string, T> jsonData = JsonConvert.DeserializeObject<Dictionary<string, T>>(result);
-            
-            // Muutetaan haettu tieto parametrinä syötettyyn listaan
 
-            foreach (var obj in jsonData)
+            if (jsonData == null)
             {
-                dataList.Add(obj.Value);
+                Debug.Log($"{typeof(T)} nimistä taulua ei löytynyt tietokannasta.");
             }
-            Debug.Log(dataList.Count);
-            // Jos parametrinä on syötetty myös funktio, niin suoritetaan kyseinen funktio
-            if (onDataReceived != null)
+            else
             {
-                onDataReceived();
+                foreach (var obj in jsonData)
+                {
+                    dataList.Add(obj.Value);
+                }
+
+                // Jos parametrinä on syötetty myös funktio, niin suoritetaan kyseinen funktio
+                if (onDataReceived != null)
+                {
+                    onDataReceived();
+                }
             }
 
         }
         req.Dispose();
     }
 
-    private IEnumerator PostData<T>(T data)
+    private IEnumerator _PostData<T>(T data, Action onDataPosted = null)
     {
         // Niin kauan kun meillä ei ole authentikaatiota tietokannan käsittellyyn,
         // odotamme, että Authenticate() metodi on hakenut meille tokenin.
@@ -93,7 +137,10 @@ public class DatabaseManager : MonoBehaviour
         }
         else
         {
-            Debug.Log("Data lähetetty serverille onnistuneesti.");
+            if (onDataPosted != null)
+            {
+                onDataPosted();
+            }
         }
         req.Dispose();
 
@@ -102,7 +149,7 @@ public class DatabaseManager : MonoBehaviour
     // Google Firebasen authentikaatiosta löytyy lisää tietoa osoitteesta
     // https://firebase.google.com/docs/reference/rest/auth. Esimerkissämme
     // käytämme kohtaa Sign in anonymously
-    private IEnumerator Authenticate()
+    private IEnumerator Authenticate(Action onAuthentication = null)
     {
         // Määritetään ns. Request Payload lähetettäväksi serverille.
         string postData = "{'returnSecureToken': 'true'}";
@@ -130,6 +177,10 @@ public class DatabaseManager : MonoBehaviour
             Dictionary<string, string> data = JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
             // Asetetaan token -muuttujan arvoksi, JSON muodossa olevasta datasta löytyvästä idToken arvosta.
             token = data["idToken"];
+            if (onAuthentication != null)
+            {
+                onAuthentication();
+            }
         }
 
         req.Dispose();
