@@ -28,3 +28,6 @@ public class HighScore{
   public int score; 
   public string date; 
 }
+```
+
+Tässä projektissa on mukana **HighScoreManager.cs** tiedosto, josta löytyy esimerkkejä, miten tietokantaa käytetään.
